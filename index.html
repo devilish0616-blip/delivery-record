@@ -221,7 +221,8 @@
   .status-warning { background: #fee2e2; color: #991b1b; }
 
   /* 後台標頭 / 登出 */
-  .admin-header { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+  .admin-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .admin-user-email { font-size: 0.85rem; color: var(--text-light); font-weight: 600; word-break: break-all; }
   .logout-btn {
     padding: 8px 16px;
     background: #e5e7eb;
@@ -356,24 +357,15 @@
 
     <!-- ===================== Tab 2：系統管理（需登入） ===================== -->
     <div id="tab-admin" class="tab-content">
-      <!-- 管理員登入表單 -->
-      <div id="adminLogin" class="manage-section">
-        <h3>🔒 系統管理登入</h3>
-        <div class="form-group">
-          <label for="adminUsername">帳號</label>
-          <input type="text" id="adminUsername" autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label for="adminPassword">密碼</label>
-          <input type="password" id="adminPassword" autocomplete="current-password">
-        </div>
-        <div id="adminLoginError" class="message-box error" style="display:none;"></div>
-        <button type="button" id="adminLoginBtn" class="primary-btn">登入</button>
+      <!-- 無管理員權限提示 -->
+      <div id="adminNoPermission" class="manage-section" style="display:none;">
+        <p id="adminNoPermissionText" class="empty-hint" style="text-align:center; padding: 24px 0;"></p>
       </div>
 
-      <!-- 後台內容（登入後顯示） -->
+      <!-- 後台內容（僅管理員 Google 帳號可見） -->
       <div id="adminPanel" style="display:none;">
         <div class="admin-header">
+          <span id="adminUserEmail" class="admin-user-email"></span>
           <button type="button" id="adminLogoutBtn" class="logout-btn">登出</button>
         </div>
 
@@ -494,14 +486,18 @@ const OAUTH_CLIENT_ID = '45650060938-jdpoafiacprvqmhoi9ep84bp2vssmtol.apps.googl
 
 const OIL_CHANGE_INTERVAL_KM = 1000; // 換機油提醒：行駛超過此公里數即提醒
 
-// 系統管理後台帳號密碼（僅作為前端介面的簡易門檔，非真正的安全機制）
-const ADMIN_ACCOUNT = { username: 'admin', password: '0955330186' };
+// 允許進入「系統管理」後台的 Google 帳號 Email 清單
+// 使用者以此 Email 登入 Google 後，才能看到並使用系統管理功能
+const ADMIN_EMAILS = [
+  'devilish0616@gmail.com'   // 請替換成你的 Gmail
+];
 
 /* ============================================================
  * 常數區塊：一般情況下不需修改
  * ============================================================ */
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
-const OAUTH_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+// spreadsheets：讀寫試算表；userinfo.email：用於判斷登入帳號是否為管理員
+const OAUTH_SCOPE = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email';
 
 // 每日送件紀錄表的標題列
 const RECORD_HEADER = ['日期', '員工姓名', '車牌號碼', '起始里程', '結束里程', '使用公里數', '正物流件數', '逆物流件數', '備註'];
@@ -516,13 +512,11 @@ const SETTINGS_HEADER = ['類型', '名稱', '職稱'];
 const TYPE_EMPLOYEE = '員工';
 const TYPE_VEHICLE = '車牌';
 
-// sessionStorage 中記錄管理員登入狀態的 key
-const ADMIN_SESSION_KEY = 'isAdminLoggedIn';
-
 /* ============================================================
  * 全域狀態
  * ============================================================ */
 let accessToken = null;      // OAuth 2.0 access token（取得後才能讀寫資料）
+let currentUserEmail = null; // 目前登入的 Google 帳號 Email（用於判斷是否為管理員）
 let tokenClient = null;       // Google Identity Services 的 token client
 let domReady = false;         // 頁面 DOM 是否已就緒
 let gsiReady = false;         // Google Identity Services 函式庫是否已載入
@@ -882,7 +876,7 @@ function showOilModal(vehicle, distance) {
 }
 
 /* ============================================================
- * 分頁（Tab）切換 與 系統管理登入 / 登出
+ * 分頁（Tab）切換 與 系統管理權限判斷 / 登出
  * ============================================================ */
 
 function switchTab(tabName) {
@@ -894,53 +888,53 @@ function switchTab(tabName) {
   });
 
   if (tabName === 'admin') {
-    if (isAdminLoggedIn()) {
+    if (!accessToken) {
+      showAdminNoPermission('⚠️ 請先完成 Google 帳號登入授權');
+    } else if (isAdmin()) {
       showAdminPanel();
       refreshAdminData();
     } else {
-      showAdminLogin();
+      showAdminNoPermission();
     }
   }
 }
 
-// 是否已通過系統管理登入（存於 sessionStorage，重新整理頁面後失效）
-function isAdminLoggedIn() {
-  return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true';
+// 目前登入的 Google 帳號是否為管理員（Email 是否在 ADMIN_EMAILS 清單內）
+function isAdmin() {
+  return !!currentUserEmail && ADMIN_EMAILS.includes(currentUserEmail);
 }
 
-function showAdminLogin() {
-  document.getElementById('adminLogin').style.display = 'block';
+// 顯示「無管理員權限」提示，隱藏後台內容
+function showAdminNoPermission(message) {
+  document.getElementById('adminNoPermissionText').textContent =
+    message || '⚠️ 您目前登入的 Google 帳號沒有管理員權限，無法使用系統管理功能。';
+  document.getElementById('adminNoPermission').style.display = 'block';
   document.getElementById('adminPanel').style.display = 'none';
 }
 
+// 顯示後台內容，並標示目前登入的管理員帳號
 function showAdminPanel() {
-  document.getElementById('adminLogin').style.display = 'none';
+  document.getElementById('adminNoPermission').style.display = 'none';
   document.getElementById('adminPanel').style.display = 'block';
+  document.getElementById('adminUserEmail').textContent = currentUserEmail || '';
 }
 
-// 處理系統管理登入按鈕
-function handleAdminLogin() {
-  const username = document.getElementById('adminUsername').value;
-  const password = document.getElementById('adminPassword').value;
-  const errorBox = document.getElementById('adminLoginError');
-
-  if (username === ADMIN_ACCOUNT.username && password === ADMIN_ACCOUNT.password) {
-    sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
-    errorBox.style.display = 'none';
-    document.getElementById('adminUsername').value = '';
-    document.getElementById('adminPassword').value = '';
-    showAdminPanel();
-    refreshAdminData();
-  } else {
-    errorBox.textContent = '帳號或密碼錯誤';
-    errorBox.style.display = 'block';
-  }
-}
-
-// 處理登出按鈕
+// 處理登出按鈕：登出目前的 Google 帳號並清空已載入的資料
 function handleAdminLogout() {
-  sessionStorage.removeItem(ADMIN_SESSION_KEY);
-  showAdminLogin();
+  if (!accessToken) return;
+  google.accounts.oauth2.revoke(accessToken, () => {
+    accessToken = null;
+    currentUserEmail = null;
+    EMPLOYEES = [];
+    EMPLOYEE_TITLES = {};
+    VEHICLES = [];
+    oilRecords = {};
+    sheetTitlesCache = null;
+    populateDropdown(document.getElementById('employeeSelect'), EMPLOYEES);
+    populateDropdown(document.getElementById('vehicleSelect'), VEHICLES);
+    updateAuthStatus(false, '已登出，請重新登入 Google 帳號');
+    switchTab('daily');
+  });
 }
 
 // 重新載入並渲染整個後台（儀表板、員工/車牌清單、換機油表、薪水表）
@@ -1622,6 +1616,18 @@ function updateAuthStatus(loggedIn, errMsg) {
   }
 }
 
+// 取得目前登入的 Google 帳號 Email（需 userinfo.email 授權範圍），用於判斷是否為管理員
+async function fetchUserEmail() {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  });
+  if (!res.ok) {
+    throw new Error('無法取得 Google 帳號資訊');
+  }
+  const data = await res.json();
+  return data.email;
+}
+
 
 /* ============================================================
  * 應用程式初始化（OAuth 授權成功後執行）
@@ -1629,6 +1635,13 @@ function updateAuthStatus(loggedIn, errMsg) {
 async function initializeApp() {
   setLoading(true, '初始化資料中...');
   try {
+    // 取得目前登入的 Google 帳號 Email，用於判斷是否擁有系統管理後台權限
+    try {
+      currentUserEmail = await fetchUserEmail();
+    } catch (err) {
+      currentUserEmail = null;
+    }
+
     // 確保「系統設定」「換機油紀錄」工作表存在
     await ensureSheetExists(SETTINGS_SHEET_NAME, SETTINGS_HEADER);
     await ensureSheetExists(OIL_SHEET_NAME, OIL_HEADER);
@@ -1646,9 +1659,13 @@ async function initializeApp() {
       await handleVehicleChange();
     }
 
-    // 若目前已在系統管理分頁且已登入，順便刷新後台資料
-    if (document.getElementById('tab-admin').classList.contains('active') && isAdminLoggedIn()) {
-      await refreshAdminData();
+    // 若目前已在系統管理分頁，依管理員權限顯示後台內容或無權限提示
+    if (document.getElementById('tab-admin').classList.contains('active')) {
+      if (isAdmin()) {
+        await refreshAdminData();
+      } else {
+        showAdminNoPermission();
+      }
     }
 
     if (EMPLOYEES.length === 0 || VEHICLES.length === 0) {
@@ -1681,12 +1698,8 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('recordForm').addEventListener('submit', handleSubmit);
   document.getElementById('authBtn').addEventListener('click', requestAuth);
 
-  // 系統管理登入 / 登出
-  document.getElementById('adminLoginBtn').addEventListener('click', handleAdminLogin);
+  // 系統管理：登出（登出目前的 Google 帳號）
   document.getElementById('adminLogoutBtn').addEventListener('click', handleAdminLogout);
-  document.getElementById('adminPassword').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); handleAdminLogin(); }
-  });
 
   // 系統管理：新增員工 / 車牌
   document.getElementById('addEmployeeBtn').addEventListener('click', addEmployee);
