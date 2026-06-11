@@ -1,0 +1,1706 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>員工每日送件紀錄</title>
+<!-- Google Identity Services（OAuth 2.0 登入授權，讀寫 Google Sheets 用） -->
+<script src="https://accounts.google.com/gsi/client" async defer onload="onGsiLoaded()"></script>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --success: #16a34a;
+    --error: #dc2626;
+    --bg: #f3f4f6;
+    --card-bg: #ffffff;
+    --border: #d1d5db;
+    --text: #1f2937;
+    --text-light: #6b7280;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 16px;
+    line-height: 1.5;
+  }
+
+  .container { max-width: 700px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 16px; }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; }
+
+  .auth-status {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--text-light);
+    flex-wrap: wrap;
+  }
+  .auth-status button {
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    border-radius: 6px;
+    border: 1px solid var(--primary);
+    background: white;
+    color: var(--primary);
+    cursor: pointer;
+  }
+  .auth-status button:hover { background: var(--primary); color: white; }
+
+  /* 分頁切換按鈕 */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab-btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: white;
+    color: var(--text-light);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab-btn.active { background: var(--primary); color: white; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  form, .manage-section {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .manage-section { margin-bottom: 16px; }
+  .manage-section h3 { margin-bottom: 12px; font-size: 1.1rem; }
+  .manage-section h4 { margin: 16px 0 8px; font-size: 0.95rem; }
+
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 0.9rem; }
+
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 1rem;
+    background: white;
+    color: var(--text);
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+  input[readonly] { background: #f3f4f6; color: var(--text-light); }
+
+  .hint { display: block; font-size: 0.8rem; color: var(--text-light); margin-top: 4px; }
+  textarea { resize: vertical; min-height: 60px; }
+
+  button[type="submit"], .primary-btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: white;
+    background: var(--primary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  button[type="submit"]:hover, .primary-btn:hover { background: var(--primary-dark); }
+  button[type="submit"]:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  .message-box {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+  .message-box.success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+  .message-box.error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+  /* 系統管理：清單樣式 */
+  .manage-list { list-style: none; margin-bottom: 12px; }
+  .manage-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .manage-list li span { font-weight: 500; word-break: break-all; }
+  .empty-hint { color: var(--text-light); font-size: 0.9rem; padding: 8px 0 12px; }
+  .delete-btn {
+    flex-shrink: 0;
+    background: #fee2e2;
+    color: var(--error);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .delete-btn:hover { background: #fecaca; }
+
+  .add-row { display: flex; gap: 8px; }
+  .add-row input { flex: 1; }
+  .add-row-multi { display: flex; gap: 8px; flex-wrap: wrap; }
+  .add-row-multi input { flex: 1; min-width: 100px; }
+  .add-row button, .add-row-multi button {
+    padding: 10px 16px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .add-row button:hover, .add-row-multi button:hover { background: var(--primary-dark); }
+
+  /* 統計卡片 */
+  .stat-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (min-width: 480px) {
+    .stat-cards { grid-template-columns: repeat(3, 1fr); }
+  }
+  .stat-card {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .stat-label { font-size: 0.85rem; color: var(--text-light); margin-bottom: 6px; }
+  .stat-value { font-size: 1.6rem; font-weight: 800; color: var(--primary); }
+  .stat-sub { font-size: 0.8rem; color: var(--text-light); margin-top: 4px; }
+
+  /* 表格 */
+  .table-wrapper { overflow-x: auto; margin-bottom: 16px; -webkit-overflow-scrolling: touch; }
+  .data-table { width: 100%; border-collapse: collapse; min-width: 560px; font-size: 0.9rem; }
+  .data-table th, .data-table td {
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .data-table th { background: #f3f4f6; font-weight: 700; }
+  .data-table td input {
+    width: 100%;
+    min-width: 90px;
+    padding: 6px 8px;
+    font-size: 0.9rem;
+  }
+
+  /* 狀態徽章 */
+  .status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .status-ok { background: #dcfce7; color: #166534; }
+  .status-warning { background: #fee2e2; color: #991b1b; }
+
+  /* 後台標頭 / 登出 */
+  .admin-header { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+  .logout-btn {
+    padding: 8px 16px;
+    background: #e5e7eb;
+    color: var(--text);
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .logout-btn:hover { background: #d1d5db; }
+
+  /* 佔位區塊 */
+  .placeholder-box {
+    background: #f3f4f6;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    color: var(--text-light);
+    margin-bottom: 16px;
+    font-weight: 600;
+  }
+
+  /* 換機油警告 / 共用 Modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; padding: 16px;
+  }
+  .modal-box {
+    background: white; border-radius: 12px; padding: 24px;
+    max-width: 400px; width: 100%; text-align: center;
+  }
+  .modal-box p { margin-bottom: 20px; font-size: 1rem; line-height: 1.6; white-space: pre-line; }
+  .modal-buttons { display: flex; gap: 12px; }
+  .modal-buttons button { flex: 1; padding: 10px; border-radius: 8px; font-size: 0.95rem; cursor: pointer; border: none; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-secondary { background: #e5e7eb; color: var(--text); }
+
+  /* 處理中遮罩 */
+  .loading-overlay {
+    position: fixed; inset: 0;
+    background: rgba(255,255,255,0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 1100; gap: 12px;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 4px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (min-width: 640px) {
+    body { padding: 32px; }
+    h1 { font-size: 1.8rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📦 員工每日送件紀錄</h1>
+      <div class="auth-status">
+        <span id="authStatusText">尚未登入 Google 帳號</span>
+        <button id="authBtn" type="button">登入 Google</button>
+      </div>
+    </header>
+
+    <!-- 分頁切換 -->
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="daily">📋 每日紀錄</button>
+      <button type="button" class="tab-btn" data-tab="admin">⚙️ 系統管理</button>
+    </div>
+
+    <!-- 訊息提示區（成功 / 錯誤訊息） -->
+    <div id="messageBox" class="message-box" style="display:none;"></div>
+
+    <!-- ===================== Tab 1：每日紀錄（無需登入） ===================== -->
+    <div id="tab-daily" class="tab-content active">
+      <form id="recordForm">
+        <div class="form-group">
+          <label for="dateInput">日期 *</label>
+          <input type="date" id="dateInput" required>
+        </div>
+
+        <div class="form-group">
+          <label for="employeeSelect">員工姓名 *</label>
+          <select id="employeeSelect" required></select>
+        </div>
+
+        <div class="form-group">
+          <label for="vehicleSelect">車牌號碼 *</label>
+          <select id="vehicleSelect" required></select>
+          <span class="hint" id="startOdometerHint"></span>
+        </div>
+
+        <!-- 起始里程不需手動輸入，自動帶入該車牌上次紀錄的結束里程 -->
+        <input type="hidden" id="startOdometer" value="">
+
+        <div class="form-group">
+          <label for="endOdometer">結束里程 (km) *</label>
+          <input type="number" id="endOdometer" inputmode="numeric" min="0" step="1" required>
+        </div>
+
+        <div class="form-group">
+          <label for="distanceUsed">使用公里數 (km)</label>
+          <input type="text" id="distanceUsed" readonly placeholder="自動計算">
+        </div>
+
+        <div class="form-group">
+          <label for="forwardCount">正物流件數 *</label>
+          <input type="number" id="forwardCount" inputmode="numeric" min="0" step="1" required>
+        </div>
+
+        <div class="form-group">
+          <label for="reverseCount">逆物流件數 *</label>
+          <input type="number" id="reverseCount" inputmode="numeric" min="0" step="1" required>
+        </div>
+
+        <div class="form-group">
+          <label for="notes">備註</label>
+          <textarea id="notes" placeholder="非必填"></textarea>
+        </div>
+
+        <button type="submit" id="submitBtn" disabled>提交紀錄</button>
+      </form>
+    </div>
+
+    <!-- ===================== Tab 2：系統管理（需登入） ===================== -->
+    <div id="tab-admin" class="tab-content">
+      <!-- 管理員登入表單 -->
+      <div id="adminLogin" class="manage-section">
+        <h3>🔒 系統管理登入</h3>
+        <div class="form-group">
+          <label for="adminUsername">帳號</label>
+          <input type="text" id="adminUsername" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="adminPassword">密碼</label>
+          <input type="password" id="adminPassword" autocomplete="current-password">
+        </div>
+        <div id="adminLoginError" class="message-box error" style="display:none;"></div>
+        <button type="button" id="adminLoginBtn" class="primary-btn">登入</button>
+      </div>
+
+      <!-- 後台內容（登入後顯示） -->
+      <div id="adminPanel" style="display:none;">
+        <div class="admin-header">
+          <button type="button" id="adminLogoutBtn" class="logout-btn">登出</button>
+        </div>
+
+        <!-- 區塊一：數據儀表板 -->
+        <div class="manage-section">
+          <h3>📊 數據儀表板（<span id="dashMonthLabel"></span>）</h3>
+          <div class="stat-cards">
+            <div class="stat-card">
+              <div class="stat-label">本月總送件數</div>
+              <div class="stat-value" id="dashTotalCount">0</div>
+              <div class="stat-sub">正物流 <span id="dashTotalForward">0</span> ／ 逆物流 <span id="dashTotalReverse">0</span></div>
+            </div>
+          </div>
+
+          <h4>各員工送件數排行</h4>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>員工姓名</th><th>正物流</th><th>逆物流</th><th>合計</th></tr></thead>
+              <tbody id="dashEmployeeTableBody"></tbody>
+            </table>
+          </div>
+
+          <h4>各車牌使用公里數統計</h4>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>車牌</th><th>總公里數</th></tr></thead>
+              <tbody id="dashVehicleTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 區塊二：員工管理 -->
+        <div class="manage-section">
+          <h3>👤 員工管理</h3>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>姓名</th><th>職稱</th><th>操作</th></tr></thead>
+              <tbody id="employeeTableBody"></tbody>
+            </table>
+          </div>
+          <div class="add-row-multi">
+            <input type="text" id="newEmployeeName" placeholder="姓名">
+            <input type="text" id="newEmployeeTitle" placeholder="職稱">
+            <button type="button" id="addEmployeeBtn">新增員工</button>
+          </div>
+        </div>
+
+        <!-- 區塊三：車牌管理 -->
+        <div class="manage-section">
+          <h3>🛵 車牌管理</h3>
+          <ul id="vehicleList" class="manage-list"></ul>
+          <div class="add-row">
+            <input type="text" id="newVehicleInput" placeholder="輸入新車牌號碼">
+            <button type="button" id="addVehicleBtn">新增車牌</button>
+          </div>
+        </div>
+
+        <!-- 區塊四：換機油紀錄管理 -->
+        <div class="manage-section">
+          <h3>🛢 換機油紀錄管理</h3>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>車牌</th>
+                  <th>上次換機油里程</th>
+                  <th>上次換機油日期</th>
+                  <th>目前里程</th>
+                  <th>已行駛km</th>
+                  <th>狀態</th>
+                  <th>備註</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="oilTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 區塊五：薪水計算（預留） -->
+        <div class="manage-section">
+          <h3>💰 薪水計算</h3>
+          <div class="placeholder-box">薪水計算功能即將上線</div>
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead><tr><th>員工姓名</th><th>職稱</th><th>本月件數</th><th>應發薪水</th></tr></thead>
+              <tbody id="salaryTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 換機油警告 Modal -->
+  <div id="oilModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <p id="oilModalText"></p>
+      <div class="modal-buttons">
+        <button id="oilModalCancel" class="btn-secondary" type="button">取消</button>
+        <button id="oilModalConfirm" class="btn-primary" type="button">已知悉，繼續提交</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 處理中遮罩 -->
+  <div id="loadingOverlay" class="loading-overlay" style="display:flex;">
+    <div class="spinner"></div>
+    <p id="loadingText">正在連接 Google 帳號...</p>
+  </div>
+
+<script>
+/* ============================================================
+ * 設定區塊
+ * ============================================================ */
+const SPREADSHEET_ID  = '1z0IPTUR04Hb2-08c7aL92gatocM2cTzaftCNWj_YV2g'; // Google Sheets 試算表 ID
+const OAUTH_CLIENT_ID = '45650060938-jdpoafiacprvqmhoi9ep84bp2vssmtol.apps.googleusercontent.com'; // OAuth 2.0 用戶端 ID（讀寫資料皆用此授權）
+
+const OIL_CHANGE_INTERVAL_KM = 1000; // 換機油提醒：行駛超過此公里數即提醒
+
+// 系統管理後台帳號密碼（僅作為前端介面的簡易門檔，非真正的安全機制）
+const ADMIN_ACCOUNT = { username: 'admin', password: '0955330186' };
+
+/* ============================================================
+ * 常數區塊：一般情況下不需修改
+ * ============================================================ */
+const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
+const OAUTH_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+
+// 每日送件紀錄表的標題列
+const RECORD_HEADER = ['日期', '員工姓名', '車牌號碼', '起始里程', '結束里程', '使用公里數', '正物流件數', '逆物流件數', '備註'];
+
+// 換機油紀錄表的名稱與標題列
+const OIL_SHEET_NAME = '換機油紀錄';
+const OIL_HEADER = ['車牌號碼', '上次換機油里程', '換機油日期', '備註'];
+
+// 系統設定表的名稱、標題列與類型代碼（A:類型 B:名稱 C:職稱）
+const SETTINGS_SHEET_NAME = '系統設定';
+const SETTINGS_HEADER = ['類型', '名稱', '職稱'];
+const TYPE_EMPLOYEE = '員工';
+const TYPE_VEHICLE = '車牌';
+
+// sessionStorage 中記錄管理員登入狀態的 key
+const ADMIN_SESSION_KEY = 'isAdminLoggedIn';
+
+/* ============================================================
+ * 全域狀態
+ * ============================================================ */
+let accessToken = null;      // OAuth 2.0 access token（取得後才能讀寫資料）
+let tokenClient = null;       // Google Identity Services 的 token client
+let domReady = false;         // 頁面 DOM 是否已就緒
+let gsiReady = false;         // Google Identity Services 函式庫是否已載入
+let sheetTitlesCache = null;  // 試算表中所有工作表名稱的快取
+let authTimeoutId = null;     // 授權逾時計時器（偵測自動彈出視窗被瀏覽器封鎖）
+
+let EMPLOYEES = [];        // 員工姓名清單（從「系統設定」工作表讀取）
+let EMPLOYEE_TITLES = {};  // 員工職稱，格式：{ 姓名: 職稱 }
+let VEHICLES = [];          // 車牌清單（從「系統設定」工作表讀取）
+let oilRecords = {};        // 換機油紀錄，格式：{ 車牌號碼: { km, date, note } }
+
+
+/* ============================================================
+ * Google Sheets API 基礎請求函式
+ * ============================================================ */
+
+// 將工作表名稱包上單引號，避免名稱含有特殊字元（中文、數字、減號）導致 A1 範圍解析錯誤
+function quoteSheet(name) {
+  return `'${name.replace(/'/g, "''")}'`;
+}
+
+// 統一使用 OAuth Access Token 存取 Google Sheets API（讀取與寫入皆需先完成 Google 帳號登入）
+// 注意：登入的 Google 帳號必須對此試算表至少擁有「檢視者」權限，寫入操作則需要「編輯者」權限
+async function gsAuthFetch(path, options = {}) {
+  if (!accessToken) {
+    throw new Error('尚未完成 Google 帳號授權，請先點擊上方「登入 Google」按鈕');
+  }
+  const res = await fetch(`${SHEETS_API_BASE}/${SPREADSHEET_ID}${path}`, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Google Sheets 存取失敗 (${res.status})：${(err.error && err.error.message) || res.statusText}`);
+  }
+  return res.json();
+}
+
+// 讀取資料（與寫入共用同一組 OAuth 授權）
+async function gsGet(path) {
+  return gsAuthFetch(path);
+}
+
+
+/* ============================================================
+ * 工作表管理
+ * ============================================================ */
+
+// 取得試算表中所有工作表的名稱（含快取）
+async function getSheetTitles(forceRefresh = false) {
+  if (sheetTitlesCache && !forceRefresh) return sheetTitlesCache;
+  const data = await gsGet('?fields=sheets.properties.title');
+  sheetTitlesCache = (data.sheets || []).map(s => s.properties.title);
+  return sheetTitlesCache;
+}
+
+// 確認工作表是否存在，若不存在則自動建立並寫入標題列
+async function ensureSheetExists(sheetName, headerRow) {
+  const titles = await getSheetTitles();
+  if (titles.includes(sheetName)) return;
+
+  await gsAuthFetch(':batchUpdate', {
+    method: 'POST',
+    body: JSON.stringify({
+      requests: [{ addSheet: { properties: { title: sheetName } } }]
+    })
+  });
+
+  const range = encodeURIComponent(`${quoteSheet(sheetName)}!A1`);
+  await gsAuthFetch(`/values/${range}?valueInputOption=USER_ENTERED`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [headerRow] })
+  });
+
+  sheetTitlesCache.push(sheetName);
+}
+
+// 將一筆紀錄附加到指定工作表的最後一列
+async function appendRow(sheetName, rowValues) {
+  const range = encodeURIComponent(`${quoteSheet(sheetName)}!A1`);
+  await gsAuthFetch(`/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+    method: 'POST',
+    body: JSON.stringify({ values: [rowValues] })
+  });
+}
+
+// 依照日期字串（YYYY-MM-DD）取得對應的月份工作表名稱（YYYY-MM）
+function getMonthSheetName(dateStr) {
+  return dateStr.slice(0, 7);
+}
+
+// 取得今天的日期字串（YYYY-MM-DD）
+function getTodayDateStr() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+
+/* ============================================================
+ * 系統設定（員工 / 職稱 / 車牌清單）讀寫
+ * ============================================================ */
+
+// 從「系統設定」工作表讀取員工、職稱與車牌清單
+async function loadSystemSettings() {
+  const range = encodeURIComponent(`${quoteSheet(SETTINGS_SHEET_NAME)}!A2:C`);
+  const data = await gsGet(`/values/${range}`);
+  const rows = data.values || [];
+
+  EMPLOYEES = [];
+  EMPLOYEE_TITLES = {};
+  VEHICLES = [];
+
+  rows.forEach(r => {
+    if (r[0] === TYPE_EMPLOYEE && r[1]) {
+      EMPLOYEES.push(r[1]);
+      EMPLOYEE_TITLES[r[1]] = r[2] || '';
+    } else if (r[0] === TYPE_VEHICLE && r[1]) {
+      VEHICLES.push(r[1]);
+    }
+  });
+}
+
+// 將目前的 EMPLOYEES / EMPLOYEE_TITLES / VEHICLES 整批寫回「系統設定」工作表
+// 採用「先清除、再整批寫入」的方式，避免逐筆刪除/新增需要計算列號
+async function saveSystemSettings() {
+  const rows = [
+    ...EMPLOYEES.map(e => [TYPE_EMPLOYEE, e, EMPLOYEE_TITLES[e] || '']),
+    ...VEHICLES.map(v => [TYPE_VEHICLE, v, ''])
+  ];
+
+  const clearRange = encodeURIComponent(`${quoteSheet(SETTINGS_SHEET_NAME)}!A2:C1000`);
+  await gsAuthFetch(`/values/${clearRange}:clear`, { method: 'POST', body: '{}' });
+
+  if (rows.length > 0) {
+    const writeRange = encodeURIComponent(`${quoteSheet(SETTINGS_SHEET_NAME)}!A2`);
+    await gsAuthFetch(`/values/${writeRange}?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: rows })
+    });
+  }
+}
+
+
+/* ============================================================
+ * 換機油紀錄讀寫
+ * ============================================================ */
+
+// 讀取「換機油紀錄」工作表，存入 oilRecords
+async function loadOilRecords() {
+  const range = encodeURIComponent(`${quoteSheet(OIL_SHEET_NAME)}!A2:D`);
+  const data = await gsGet(`/values/${range}`);
+  const rows = data.values || [];
+  oilRecords = {};
+  rows.forEach(r => {
+    if (r[0]) {
+      oilRecords[r[0]] = { km: r[1] || '', date: r[2] || '', note: r[3] || '' };
+    }
+  });
+}
+
+// 將 oilRecords 整批寫回「換機油紀錄」工作表（先清除、再整批寫入）
+async function saveOilRecords() {
+  const rows = Object.keys(oilRecords).map(plate => {
+    const rec = oilRecords[plate];
+    return [plate, rec.km, rec.date, rec.note];
+  });
+
+  const clearRange = encodeURIComponent(`${quoteSheet(OIL_SHEET_NAME)}!A2:D1000`);
+  await gsAuthFetch(`/values/${clearRange}:clear`, { method: 'POST', body: '{}' });
+
+  if (rows.length > 0) {
+    const writeRange = encodeURIComponent(`${quoteSheet(OIL_SHEET_NAME)}!A2`);
+    await gsAuthFetch(`/values/${writeRange}?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      body: JSON.stringify({ values: rows })
+    });
+  }
+}
+
+/* ============================================================
+ * 起始里程查詢
+ * ============================================================ */
+
+// 搜尋所有「YYYY-MM」格式的月份工作表，找出指定車牌最新一筆紀錄的「結束里程」
+// 由最新月份往舊月份搜尋，找到後立即回傳；查無資料則回傳 null
+async function findLastOdometer(vehicle) {
+  const titles = await getSheetTitles();
+  const monthSheets = titles
+    .filter(t => /^\d{4}-\d{2}$/.test(t))
+    .sort()
+    .reverse();
+
+  for (const sheetName of monthSheets) {
+    const range = encodeURIComponent(`${quoteSheet(sheetName)}!A2:I`);
+    const data = await gsGet(`/values/${range}`);
+    const rows = data.values || [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      if (row[2] === vehicle) {
+        const endOdo = parseFloat(row[4]);
+        if (!isNaN(endOdo)) return endOdo;
+      }
+    }
+  }
+  return null; // 查無歷史紀錄
+}
+
+// 一次掃描所有月份工作表，取得「每個車牌」最新一筆紀錄的結束里程
+// 用於系統管理後台的換機油紀錄管理表格，避免逐車牌個別查詢造成大量請求
+async function getLatestOdometerMap() {
+  const titles = await getSheetTitles();
+  const monthSheets = titles
+    .filter(t => /^\d{4}-\d{2}$/.test(t))
+    .sort()
+    .reverse();
+
+  const map = {};
+  for (const sheetName of monthSheets) {
+    if (Object.keys(map).length >= VEHICLES.length) break;
+
+    const range = encodeURIComponent(`${quoteSheet(sheetName)}!A2:I`);
+    const data = await gsGet(`/values/${range}`);
+    const rows = data.values || [];
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      const plate = row[2];
+      if (plate && !(plate in map)) {
+        const endOdo = parseFloat(row[4]);
+        if (!isNaN(endOdo)) map[plate] = endOdo;
+      }
+    }
+  }
+  return map;
+}
+
+
+/* ============================================================
+ * 數據儀表板統計
+ * ============================================================ */
+
+// 讀取「本月」工作表（依今天日期判斷 YYYY-MM），統計：
+// - 本月正/逆物流總件數
+// - 各員工正/逆物流件數與合計（依合計排序）
+// - 各車牌本月使用公里數總和
+async function loadMonthlyStats() {
+  const monthSheet = getMonthSheetName(getTodayDateStr());
+  const titles = await getSheetTitles();
+
+  if (!titles.includes(monthSheet)) {
+    return { monthSheet, totalForward: 0, totalReverse: 0, employeeStats: [], vehicleStats: [] };
+  }
+
+  const range = encodeURIComponent(`${quoteSheet(monthSheet)}!A2:I`);
+  const data = await gsGet(`/values/${range}`);
+  const rows = data.values || [];
+
+  let totalForward = 0;
+  let totalReverse = 0;
+  const employeeMap = {}; // { 姓名: { forward, reverse } }
+  const vehicleMap = {};  // { 車牌: 總公里數 }
+
+  rows.forEach(r => {
+    const employee = r[1];
+    const vehicle = r[2];
+    const distance = parseFloat(r[5]) || 0;
+    const forward = parseInt(r[6], 10) || 0;
+    const reverse = parseInt(r[7], 10) || 0;
+
+    totalForward += forward;
+    totalReverse += reverse;
+
+    if (employee) {
+      if (!employeeMap[employee]) employeeMap[employee] = { forward: 0, reverse: 0 };
+      employeeMap[employee].forward += forward;
+      employeeMap[employee].reverse += reverse;
+    }
+    if (vehicle) {
+      vehicleMap[vehicle] = (vehicleMap[vehicle] || 0) + distance;
+    }
+  });
+
+  const employeeStats = Object.keys(employeeMap).map(name => ({
+    name,
+    forward: employeeMap[name].forward,
+    reverse: employeeMap[name].reverse,
+    total: employeeMap[name].forward + employeeMap[name].reverse
+  })).sort((a, b) => b.total - a.total);
+
+  const vehicleStats = Object.keys(vehicleMap).map(plate => ({
+    plate,
+    km: vehicleMap[plate]
+  }));
+
+  return { monthSheet, totalForward, totalReverse, employeeStats, vehicleStats };
+}
+
+
+/* ============================================================
+ * 換機油提醒（每日紀錄表單提交時觸發）
+ * ============================================================ */
+
+// 檢查指定車牌是否需要提醒換機油
+// 回傳 true：可以繼續提交；回傳 false：使用者選擇取消提交
+async function checkOilChangeReminder(vehicle, endOdometer) {
+  await ensureSheetExists(OIL_SHEET_NAME, OIL_HEADER);
+
+  const range = encodeURIComponent(`${quoteSheet(OIL_SHEET_NAME)}!A2:D`);
+  const data = await gsGet(`/values/${range}`);
+  const rows = data.values || [];
+  const record = rows.find(r => r[0] === vehicle);
+
+  if (!record) {
+    alert(`查無車牌「${vehicle}」的換機油紀錄。\n請至「系統管理」分頁的「換機油紀錄管理」新增該車牌的初始換機油里程資料。`);
+    return true; // 仍允許繼續提交
+  }
+
+  const lastOilOdo = parseFloat(record[1]);
+  if (isNaN(lastOilOdo)) return true;
+
+  const distance = endOdometer - lastOilOdo;
+  if (distance >= OIL_CHANGE_INTERVAL_KM) {
+    return await showOilModal(vehicle, distance);
+  }
+  return true;
+}
+
+// 顯示換機油警告視窗，回傳 Promise<boolean>
+function showOilModal(vehicle, distance) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('oilModal');
+    const text = document.getElementById('oilModalText');
+    text.textContent = `⚠️ 車牌 ${vehicle} 已行駛 ${distance} km，距上次換機油超過 ${OIL_CHANGE_INTERVAL_KM}km，請安排換機油！`;
+    modal.style.display = 'flex';
+
+    const confirmBtn = document.getElementById('oilModalConfirm');
+    const cancelBtn = document.getElementById('oilModalCancel');
+
+    function cleanup(result) {
+      modal.style.display = 'none';
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    }
+    function onConfirm() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+  });
+}
+
+/* ============================================================
+ * 分頁（Tab）切換 與 系統管理登入 / 登出
+ * ============================================================ */
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.tab-content').forEach(content => {
+    content.classList.toggle('active', content.id === `tab-${tabName}`);
+  });
+
+  if (tabName === 'admin') {
+    if (isAdminLoggedIn()) {
+      showAdminPanel();
+      refreshAdminData();
+    } else {
+      showAdminLogin();
+    }
+  }
+}
+
+// 是否已通過系統管理登入（存於 sessionStorage，重新整理頁面後失效）
+function isAdminLoggedIn() {
+  return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true';
+}
+
+function showAdminLogin() {
+  document.getElementById('adminLogin').style.display = 'block';
+  document.getElementById('adminPanel').style.display = 'none';
+}
+
+function showAdminPanel() {
+  document.getElementById('adminLogin').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'block';
+}
+
+// 處理系統管理登入按鈕
+function handleAdminLogin() {
+  const username = document.getElementById('adminUsername').value;
+  const password = document.getElementById('adminPassword').value;
+  const errorBox = document.getElementById('adminLoginError');
+
+  if (username === ADMIN_ACCOUNT.username && password === ADMIN_ACCOUNT.password) {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
+    errorBox.style.display = 'none';
+    document.getElementById('adminUsername').value = '';
+    document.getElementById('adminPassword').value = '';
+    showAdminPanel();
+    refreshAdminData();
+  } else {
+    errorBox.textContent = '帳號或密碼錯誤';
+    errorBox.style.display = 'block';
+  }
+}
+
+// 處理登出按鈕
+function handleAdminLogout() {
+  sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  showAdminLogin();
+}
+
+// 重新載入並渲染整個後台（儀表板、員工/車牌清單、換機油表、薪水表）
+async function refreshAdminData() {
+  if (!accessToken) {
+    showMessage('Google 帳號尚未授權完成，請點擊上方「登入 Google」按鈕後再試一次', 'error');
+    return;
+  }
+
+  setLoading(true, '載入後台資料中...');
+  try {
+    const stats = await loadMonthlyStats();
+    document.getElementById('dashMonthLabel').textContent = stats.monthSheet;
+    renderDashboard(stats);
+    renderSalaryTable(stats);
+
+    renderEmployeeList();
+    renderVehicleList();
+
+    const odometerMap = await getLatestOdometerMap();
+    renderOilTable(odometerMap);
+  } catch (err) {
+    showMessage('載入後台資料失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+
+/* ============================================================
+ * 下拉選單 / 清單 / 表格渲染
+ * ============================================================ */
+
+// 重新填充下拉選單，若資料為空則顯示提示選項
+function populateDropdown(selectEl, options) {
+  const prevValue = selectEl.value;
+  selectEl.innerHTML = '';
+
+  if (options.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '（尚無資料，請至系統管理新增）';
+    selectEl.appendChild(opt);
+    return;
+  }
+
+  options.forEach(value => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    selectEl.appendChild(opt);
+  });
+
+  if (options.includes(prevValue)) {
+    selectEl.value = prevValue;
+  }
+}
+
+// 渲染數據儀表板
+function renderDashboard(stats) {
+  document.getElementById('dashTotalCount').textContent = stats.totalForward + stats.totalReverse;
+  document.getElementById('dashTotalForward').textContent = stats.totalForward;
+  document.getElementById('dashTotalReverse').textContent = stats.totalReverse;
+
+  const empBody = document.getElementById('dashEmployeeTableBody');
+  empBody.innerHTML = '';
+  if (stats.employeeStats.length === 0) {
+    empBody.innerHTML = '<tr><td colspan="4" class="empty-hint">本月尚無資料</td></tr>';
+  } else {
+    stats.employeeStats.forEach(e => {
+      const tr = document.createElement('tr');
+      [e.name, e.forward, e.reverse, e.total].forEach(val => {
+        const td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+      empBody.appendChild(tr);
+    });
+  }
+
+  const vehBody = document.getElementById('dashVehicleTableBody');
+  vehBody.innerHTML = '';
+  if (stats.vehicleStats.length === 0) {
+    vehBody.innerHTML = '<tr><td colspan="2" class="empty-hint">本月尚無資料</td></tr>';
+  } else {
+    stats.vehicleStats.forEach(v => {
+      const tr = document.createElement('tr');
+      const tdPlate = document.createElement('td');
+      tdPlate.textContent = v.plate;
+      const tdKm = document.createElement('td');
+      tdKm.textContent = v.km;
+      tr.appendChild(tdPlate);
+      tr.appendChild(tdKm);
+      vehBody.appendChild(tr);
+    });
+  }
+}
+
+// 渲染薪水計算表格（預留欄位，應發薪水留待之後補入公式）
+function renderSalaryTable(stats) {
+  const body = document.getElementById('salaryTableBody');
+  body.innerHTML = '';
+
+  if (EMPLOYEES.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="empty-hint">尚無員工資料</td></tr>';
+    return;
+  }
+
+  EMPLOYEES.forEach(name => {
+    const stat = stats.employeeStats.find(e => e.name === name);
+    const total = stat ? stat.total : 0;
+    const tr = document.createElement('tr');
+    [name, EMPLOYEE_TITLES[name] || '', total, '—'].forEach(val => {
+      const td = document.createElement('td');
+      td.textContent = val;
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+// 渲染員工管理表格（姓名 / 職稱可編輯 / 刪除）
+function renderEmployeeList() {
+  const tbody = document.getElementById('employeeTableBody');
+  tbody.innerHTML = '';
+
+  if (EMPLOYEES.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-hint">尚無員工資料</td></tr>';
+    return;
+  }
+
+  EMPLOYEES.forEach(name => {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.textContent = name;
+
+    const tdTitle = document.createElement('td');
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.value = EMPLOYEE_TITLES[name] || '';
+    titleInput.addEventListener('change', () => updateEmployeeTitle(name, titleInput.value.trim()));
+    tdTitle.appendChild(titleInput);
+
+    const tdAction = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'delete-btn';
+    delBtn.textContent = '🗑 刪除';
+    delBtn.addEventListener('click', () => deleteEmployee(name));
+    tdAction.appendChild(delBtn);
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdTitle);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+  });
+}
+
+// 渲染車牌管理清單
+function renderVehicleList() {
+  const ul = document.getElementById('vehicleList');
+  ul.innerHTML = '';
+
+  if (VEHICLES.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'empty-hint';
+    p.textContent = '尚無車牌資料，請於下方新增';
+    ul.appendChild(p);
+    return;
+  }
+
+  VEHICLES.forEach(plate => {
+    const li = document.createElement('li');
+    const span = document.createElement('span');
+    span.textContent = plate;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'delete-btn';
+    btn.textContent = '🗑 刪除';
+    btn.addEventListener('click', () => deleteVehicle(plate));
+    li.appendChild(span);
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+
+// 渲染換機油紀錄管理表格
+function renderOilTable(odometerMap) {
+  const tbody = document.getElementById('oilTableBody');
+  tbody.innerHTML = '';
+
+  if (VEHICLES.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-hint">尚無車牌資料</td></tr>';
+    return;
+  }
+
+  VEHICLES.forEach(plate => {
+    const rec = oilRecords[plate] || { km: '', date: '', note: '' };
+    const currentOdo = odometerMap[plate];
+    const lastOilKm = parseFloat(rec.km);
+
+    const tr = document.createElement('tr');
+
+    const tdPlate = document.createElement('td');
+    tdPlate.textContent = plate;
+
+    const tdLastKm = document.createElement('td');
+    const kmInput = document.createElement('input');
+    kmInput.type = 'number';
+    kmInput.min = '0';
+    kmInput.step = '1';
+    kmInput.value = rec.km;
+    tdLastKm.appendChild(kmInput);
+
+    const tdLastDate = document.createElement('td');
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.value = rec.date;
+    tdLastDate.appendChild(dateInput);
+
+    const tdCurrent = document.createElement('td');
+    tdCurrent.textContent = (currentOdo !== undefined && currentOdo !== null) ? currentOdo : '無紀錄';
+
+    const tdDriven = document.createElement('td');
+    const tdStatus = document.createElement('td');
+    if (currentOdo !== undefined && currentOdo !== null && !isNaN(lastOilKm)) {
+      const driven = currentOdo - lastOilKm;
+      tdDriven.textContent = driven;
+      const badge = document.createElement('span');
+      if (driven >= OIL_CHANGE_INTERVAL_KM) {
+        badge.className = 'status-badge status-warning';
+        badge.textContent = '⚠️ 需換機油';
+      } else {
+        badge.className = 'status-badge status-ok';
+        badge.textContent = '✅ 正常';
+      }
+      tdStatus.appendChild(badge);
+    } else {
+      tdDriven.textContent = '—';
+      tdStatus.textContent = '—';
+    }
+
+    const tdNote = document.createElement('td');
+    const noteInput = document.createElement('input');
+    noteInput.type = 'text';
+    noteInput.value = rec.note;
+    tdNote.appendChild(noteInput);
+
+    const tdAction = document.createElement('td');
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn-save-oil';
+    saveBtn.textContent = '💾 更新';
+    saveBtn.style.cssText = 'background:var(--success);color:white;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:700;';
+    saveBtn.addEventListener('click', () => saveOilRecordForVehicle(plate, kmInput, dateInput, noteInput, odometerMap));
+    tdAction.appendChild(saveBtn);
+
+    tr.appendChild(tdPlate);
+    tr.appendChild(tdLastKm);
+    tr.appendChild(tdLastDate);
+    tr.appendChild(tdCurrent);
+    tr.appendChild(tdDriven);
+    tr.appendChild(tdStatus);
+    tr.appendChild(tdNote);
+    tr.appendChild(tdAction);
+    tbody.appendChild(tr);
+  });
+}
+
+/* ============================================================
+ * 系統管理：員工 / 車牌 / 換機油紀錄 新增、刪除、更新
+ * ============================================================ */
+
+// 新增員工（含職稱）
+async function addEmployee() {
+  const nameInput = document.getElementById('newEmployeeName');
+  const titleInput = document.getElementById('newEmployeeTitle');
+  const name = nameInput.value.trim();
+  const title = titleInput.value.trim();
+  if (!name) return;
+  if (EMPLOYEES.includes(name)) {
+    showMessage('此員工姓名已存在', 'error');
+    return;
+  }
+
+  setLoading(true, '新增員工中...');
+  try {
+    EMPLOYEES.push(name);
+    EMPLOYEE_TITLES[name] = title;
+    await saveSystemSettings();
+    renderEmployeeList();
+    populateDropdown(document.getElementById('employeeSelect'), EMPLOYEES);
+    nameInput.value = '';
+    titleInput.value = '';
+    showMessage(`✅ 已新增員工：${name}`, 'success');
+  } catch (err) {
+    EMPLOYEES = EMPLOYEES.filter(e => e !== name);
+    delete EMPLOYEE_TITLES[name];
+    showMessage('新增失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// 刪除員工
+async function deleteEmployee(name) {
+  if (!confirm(`確定要刪除員工「${name}」嗎？`)) return;
+
+  setLoading(true, '刪除員工中...');
+  const backupEmployees = [...EMPLOYEES];
+  const backupTitle = EMPLOYEE_TITLES[name];
+  try {
+    EMPLOYEES = EMPLOYEES.filter(e => e !== name);
+    delete EMPLOYEE_TITLES[name];
+    await saveSystemSettings();
+    renderEmployeeList();
+    populateDropdown(document.getElementById('employeeSelect'), EMPLOYEES);
+    showMessage(`✅ 已刪除員工：${name}`, 'success');
+  } catch (err) {
+    EMPLOYEES = backupEmployees;
+    EMPLOYEE_TITLES[name] = backupTitle;
+    showMessage('刪除失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// 更新員工職稱（直接編輯儲存）
+async function updateEmployeeTitle(name, title) {
+  const backup = EMPLOYEE_TITLES[name];
+  if (backup === title) return;
+
+  setLoading(true, '更新職稱中...');
+  try {
+    EMPLOYEE_TITLES[name] = title;
+    await saveSystemSettings();
+    showMessage(`✅ 已更新 ${name} 的職稱`, 'success');
+  } catch (err) {
+    EMPLOYEE_TITLES[name] = backup;
+    showMessage('更新失敗：' + err.message, 'error');
+    renderEmployeeList();
+  } finally {
+    setLoading(false);
+  }
+}
+
+// 新增車牌
+async function addVehicle() {
+  const input = document.getElementById('newVehicleInput');
+  const plate = input.value.trim();
+  if (!plate) return;
+  if (VEHICLES.includes(plate)) {
+    showMessage('此車牌已存在', 'error');
+    return;
+  }
+
+  setLoading(true, '新增車牌中...');
+  try {
+    VEHICLES.push(plate);
+    await saveSystemSettings();
+    renderVehicleList();
+    populateDropdown(document.getElementById('vehicleSelect'), VEHICLES);
+    input.value = '';
+    showMessage(`✅ 已新增車牌：${plate}`, 'success');
+
+    const odometerMap = await getLatestOdometerMap();
+    renderOilTable(odometerMap);
+    await handleVehicleChange();
+  } catch (err) {
+    VEHICLES = VEHICLES.filter(v => v !== plate);
+    showMessage('新增失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// 刪除車牌（同時移除其換機油紀錄；歷史送件紀錄保留不動）
+async function deleteVehicle(plate) {
+  if (!confirm(`確定要刪除車牌「${plate}」嗎？\n（過去的送件紀錄不會被刪除，但換機油紀錄將一併移除）`)) return;
+
+  setLoading(true, '刪除車牌中...');
+  const backupVehicles = [...VEHICLES];
+  const backupOil = oilRecords[plate] ? { ...oilRecords[plate] } : null;
+  try {
+    VEHICLES = VEHICLES.filter(v => v !== plate);
+    delete oilRecords[plate];
+    await saveSystemSettings();
+    await saveOilRecords();
+    renderVehicleList();
+    populateDropdown(document.getElementById('vehicleSelect'), VEHICLES);
+    showMessage(`✅ 已刪除車牌：${plate}`, 'success');
+
+    const odometerMap = await getLatestOdometerMap();
+    renderOilTable(odometerMap);
+    await handleVehicleChange();
+  } catch (err) {
+    VEHICLES = backupVehicles;
+    if (backupOil) oilRecords[plate] = backupOil;
+    showMessage('刪除失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// 儲存（新增或更新）指定車牌的換機油紀錄
+async function saveOilRecordForVehicle(plate, kmInput, dateInput, noteInput, odometerMap) {
+  const kmStr = kmInput.value.trim();
+  const date = dateInput.value;
+  const note = noteInput.value.trim();
+
+  if (kmStr === '' || isNaN(kmStr) || !Number.isInteger(Number(kmStr)) || Number(kmStr) < 0) {
+    showMessage('換機油里程需為正整數', 'error');
+    return;
+  }
+
+  setLoading(true, '儲存換機油紀錄中...');
+  const backup = oilRecords[plate] ? { ...oilRecords[plate] } : null;
+  try {
+    oilRecords[plate] = { km: Number(kmStr), date: date, note: note };
+    await saveOilRecords();
+    showMessage(`✅ 已更新車牌 ${plate} 的換機油紀錄`, 'success');
+    renderOilTable(odometerMap);
+  } catch (err) {
+    if (backup) { oilRecords[plate] = backup; } else { delete oilRecords[plate]; }
+    showMessage('儲存失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+/* ============================================================
+ * 每日紀錄表單互動
+ * ============================================================ */
+
+// 自動計算「使用公里數」= 結束里程 - 起始里程
+// 起始里程取自該車牌上次紀錄的結束里程（存於隱藏欄位）；若查無歷史紀錄，則視為與結束里程相同（使用公里數 = 0）
+function calcDistance() {
+  const startStr = document.getElementById('startOdometer').value;
+  const end = parseFloat(document.getElementById('endOdometer').value);
+  const distanceField = document.getElementById('distanceUsed');
+
+  if (isNaN(end)) {
+    distanceField.value = '';
+    return;
+  }
+
+  const start = startStr === '' ? end : parseFloat(startStr);
+  distanceField.value = end >= start ? end - start : '';
+}
+
+// 當車牌選擇改變時，自動查詢上次紀錄的結束里程，作為本次的起始里程（使用者無需手動輸入）
+async function handleVehicleChange() {
+  const vehicle = document.getElementById('vehicleSelect').value;
+  const startField = document.getElementById('startOdometer');
+  const hint = document.getElementById('startOdometerHint');
+
+  if (!vehicle) {
+    startField.value = '';
+    hint.textContent = '';
+    calcDistance();
+    return;
+  }
+
+  hint.textContent = '查詢上次結束里程中...';
+  try {
+    const lastOdo = await findLastOdometer(vehicle);
+    if (lastOdo !== null) {
+      startField.value = lastOdo;
+      hint.textContent = `起始里程：${lastOdo} km（自動帶入車牌 ${vehicle} 上次紀錄的結束里程）`;
+    } else {
+      startField.value = '';
+      hint.textContent = `此車牌尚無歷史紀錄，本次起始里程將以結束里程計算（使用公里數視為 0）`;
+    }
+  } catch (err) {
+    hint.textContent = '查詢起始里程失敗：' + err.message;
+  }
+  calcDistance();
+}
+
+
+/* ============================================================
+ * 表單驗證與送出
+ * ============================================================ */
+
+// 驗證表單資料，若有錯誤則顯示訊息並回傳 false
+function validateForm(data) {
+  if (EMPLOYEES.length === 0 || VEHICLES.length === 0) {
+    showMessage('請先至「系統管理」分頁新增員工與車牌資料', 'error');
+    return false;
+  }
+  if (!data.date || !data.employee || !data.vehicle) {
+    showMessage('請選擇日期、員工姓名與車牌號碼', 'error');
+    return false;
+  }
+  if (data.endOdo === '' || isNaN(data.endOdo)) {
+    showMessage('結束里程為必填欄位', 'error');
+    return false;
+  }
+  if (!Number.isInteger(data.endOdo) || data.endOdo < 0) {
+    showMessage('里程數需為正整數', 'error');
+    return false;
+  }
+  if (data.endOdo < data.startOdo) {
+    showMessage('結束里程不可小於起始里程（上次紀錄的結束里程）', 'error');
+    return false;
+  }
+  if (data.forwardCount === '' || data.reverseCount === '' ||
+      isNaN(data.forwardCount) || isNaN(data.reverseCount)) {
+    showMessage('正物流件數與逆物流件數為必填欄位', 'error');
+    return false;
+  }
+  if (!Number.isInteger(data.forwardCount) || data.forwardCount < 0 ||
+      !Number.isInteger(data.reverseCount) || data.reverseCount < 0) {
+    showMessage('件數需為 0 或正整數', 'error');
+    return false;
+  }
+  return true;
+}
+
+// 表單送出處理
+async function handleSubmit(e) {
+  e.preventDefault();
+
+  const endOdo = parseInt(document.getElementById('endOdometer').value, 10);
+  const startOdoStr = document.getElementById('startOdometer').value;
+  const startOdo = startOdoStr === '' ? endOdo : parseInt(startOdoStr, 10);
+
+  const data = {
+    date: document.getElementById('dateInput').value,
+    employee: document.getElementById('employeeSelect').value,
+    vehicle: document.getElementById('vehicleSelect').value,
+    startOdo: startOdo,
+    endOdo: endOdo,
+    forwardCount: parseInt(document.getElementById('forwardCount').value, 10),
+    reverseCount: parseInt(document.getElementById('reverseCount').value, 10),
+    notes: document.getElementById('notes').value.trim()
+  };
+
+  if (!validateForm(data)) return;
+
+  if (!accessToken) {
+    showMessage('尚未完成 Google 帳號授權，請先點擊上方「登入 Google」按鈕', 'error');
+    return;
+  }
+
+  try {
+    setLoading(true, '檢查換機油提醒...');
+    const proceed = await checkOilChangeReminder(data.vehicle, data.endOdo);
+    if (!proceed) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true, '寫入資料中...');
+    const monthSheet = getMonthSheetName(data.date);
+    await ensureSheetExists(monthSheet, RECORD_HEADER);
+
+    const distance = data.endOdo - data.startOdo;
+    const row = [
+      data.date, data.employee, data.vehicle,
+      data.startOdo, data.endOdo, distance,
+      data.forwardCount, data.reverseCount, data.notes
+    ];
+    await appendRow(monthSheet, row);
+
+    showMessage('✅ 紀錄已成功送出！', 'success');
+    resetFormAfterSubmit();
+  } catch (err) {
+    showMessage('送出失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// 提交成功後清空表單，但保留「員工姓名」與「日期」
+function resetFormAfterSubmit() {
+  document.getElementById('vehicleSelect').selectedIndex = 0;
+  document.getElementById('startOdometer').value = '';
+  document.getElementById('endOdometer').value = '';
+  document.getElementById('distanceUsed').value = '';
+  document.getElementById('forwardCount').value = '';
+  document.getElementById('reverseCount').value = '';
+  document.getElementById('notes').value = '';
+  handleVehicleChange();
+}
+
+
+/* ============================================================
+ * UI 輔助函式
+ * ============================================================ */
+
+let messageTimer = null;
+function showMessage(text, type) {
+  const box = document.getElementById('messageBox');
+  box.textContent = text;
+  box.className = `message-box ${type}`;
+  box.style.display = 'block';
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => { box.style.display = 'none'; }, 5000);
+}
+
+function setLoading(isLoading, text = '處理中...') {
+  document.getElementById('loadingText').textContent = text;
+  document.getElementById('loadingOverlay').style.display = isLoading ? 'flex' : 'none';
+  document.getElementById('submitBtn').disabled = isLoading || EMPLOYEES.length === 0 || VEHICLES.length === 0;
+}
+
+// 將「日期」欄位預設為今天
+function setDefaultDate() {
+  document.getElementById('dateInput').value = getTodayDateStr();
+}
+
+/* ============================================================
+ * Google OAuth 2.0 登入授權（Google Identity Services）
+ * ============================================================ */
+
+// 由 <script onload> 呼叫，代表 GIS 函式庫已載入完成
+function onGsiLoaded() {
+  gsiReady = true;
+  tryInitAuth();
+}
+
+function tryInitAuth() {
+  if (domReady && gsiReady && !tokenClient) {
+    initGoogleAuth();
+  }
+}
+
+function initGoogleAuth() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: OAUTH_CLIENT_ID,
+    scope: OAUTH_SCOPE,
+    callback: async (response) => {
+      clearTimeout(authTimeoutId);
+      if (response.error) {
+        updateAuthStatus(false, '授權失敗，請點擊按鈕重新登入');
+        setLoading(false);
+        return;
+      }
+      accessToken = response.access_token;
+      updateAuthStatus(true);
+      await initializeApp();
+    }
+  });
+  // 頁面載入時自動觸發 OAuth 登入授權
+  // 注意：部分瀏覽器會阻擋頁面載入時自動彈出的授權視窗，導致回呼永遠不會執行，
+  // requestAuth() 內建的逾時機制會在這種情況下停止轉圈並改為顯示「登入 Google」按鈕
+  requestAuth();
+}
+
+// 觸發 Google 帳號授權彈出視窗
+// 若數秒內未取得授權結果（多半是瀏覽器封鎖了自動彈出的視窗），
+// 則停止轉圈，改為顯示「登入 Google」按鈕讓使用者手動點擊（手動點擊較不易被封鎖）
+function requestAuth() {
+  if (!tokenClient) return;
+
+  setLoading(true, '正在請求 Google 帳號授權...');
+  clearTimeout(authTimeoutId);
+  authTimeoutId = setTimeout(() => {
+    if (!accessToken) {
+      setLoading(false);
+      updateAuthStatus(false, '請點擊「登入 Google」按鈕完成授權（瀏覽器可能已封鎖自動彈出的授權視窗）');
+    }
+  }, 6000);
+
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+function updateAuthStatus(loggedIn, errMsg) {
+  const text = document.getElementById('authStatusText');
+  const btn = document.getElementById('authBtn');
+  if (loggedIn) {
+    text.textContent = '✅ 已登入 Google 帳號';
+    btn.style.display = 'none';
+  } else {
+    text.textContent = errMsg || '尚未登入 Google 帳號（需登入才能讀寫資料）';
+    btn.style.display = 'inline-block';
+  }
+}
+
+
+/* ============================================================
+ * 應用程式初始化（OAuth 授權成功後執行）
+ * ============================================================ */
+async function initializeApp() {
+  setLoading(true, '初始化資料中...');
+  try {
+    // 確保「系統設定」「換機油紀錄」工作表存在
+    await ensureSheetExists(SETTINGS_SHEET_NAME, SETTINGS_HEADER);
+    await ensureSheetExists(OIL_SHEET_NAME, OIL_HEADER);
+
+    // 讀取員工 / 職稱 / 車牌清單與換機油紀錄
+    await loadSystemSettings();
+    await loadOilRecords();
+
+    // 渲染 Tab1 下拉選單
+    populateDropdown(document.getElementById('employeeSelect'), EMPLOYEES);
+    populateDropdown(document.getElementById('vehicleSelect'), VEHICLES);
+
+    // 自動帶入起始里程
+    if (VEHICLES.length > 0) {
+      await handleVehicleChange();
+    }
+
+    // 若目前已在系統管理分頁且已登入，順便刷新後台資料
+    if (document.getElementById('tab-admin').classList.contains('active') && isAdminLoggedIn()) {
+      await refreshAdminData();
+    }
+
+    if (EMPLOYEES.length === 0 || VEHICLES.length === 0) {
+      showMessage('尚無員工或車牌資料，請先至「系統管理」分頁新增', 'error');
+    }
+  } catch (err) {
+    showMessage('初始化失敗：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+
+/* ============================================================
+ * 頁面初始化
+ * ============================================================ */
+window.addEventListener('DOMContentLoaded', () => {
+  domReady = true;
+
+  setDefaultDate();
+
+  // 分頁切換
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  // 每日紀錄表單事件
+  document.getElementById('endOdometer').addEventListener('input', calcDistance);
+  document.getElementById('vehicleSelect').addEventListener('change', handleVehicleChange);
+  document.getElementById('recordForm').addEventListener('submit', handleSubmit);
+  document.getElementById('authBtn').addEventListener('click', requestAuth);
+
+  // 系統管理登入 / 登出
+  document.getElementById('adminLoginBtn').addEventListener('click', handleAdminLogin);
+  document.getElementById('adminLogoutBtn').addEventListener('click', handleAdminLogout);
+  document.getElementById('adminPassword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleAdminLogin(); }
+  });
+
+  // 系統管理：新增員工 / 車牌
+  document.getElementById('addEmployeeBtn').addEventListener('click', addEmployee);
+  document.getElementById('addVehicleBtn').addEventListener('click', addVehicle);
+  document.getElementById('newEmployeeTitle').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addEmployee(); }
+  });
+  document.getElementById('newVehicleInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addVehicle(); }
+  });
+
+  // 初始化 Google 登入授權（會自動觸發授權，並在成功後執行 initializeApp）
+  tryInitAuth();
+});
+</script>
+</body>
+</html>
